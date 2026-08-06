@@ -1,0 +1,191 @@
+<script>
+// Personnel Platform — canonical Name Handler Engine
+// Canonical source order mirrors the LIST sheet formula:
+// G (Rank) + I (First Name) + J (Middle Name) + H (Last Name) + K (Suffix).
+
+(function () {
+  "use strict";
+
+  const platform = window.PersonnelPlatform;
+  if (!platform) return;
+
+  const SUFFIXES = new Set(["JR", "SR", "II", "III", "IV", "V"]);
+
+  function text(value) {
+    return String(value == null ? "" : value)
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function upper(value) {
+    return text(value).toUpperCase();
+  }
+
+  function field(person, names) {
+    const record = person?.record || person || {};
+
+    for (const name of names) {
+      const value = person?.[name] ?? record?.[name];
+      if (text(value)) return text(value);
+    }
+
+    return "";
+  }
+
+  function normalizeSuffix(value) {
+    const suffix = upper(value).replace(/[.,]/g, "");
+    return SUFFIXES.has(suffix) ? suffix : suffix;
+  }
+
+  function normalize(person) {
+    return {
+      rank: upper(field(person, ["rank", "Rank", "RANK"])),
+      firstName: upper(field(person, ["firstName", "First Name", "FIRST NAME"])),
+      middleName: upper(field(person, ["middleName", "Middle Name", "MIDDLE NAME"])),
+      lastName: upper(field(person, ["lastName", "Last Name", "LAST NAME"])),
+      suffix: normalizeSuffix(field(person, [
+        "suffix",
+        "Suffix",
+        "SUFFIX",
+        "nameExtension",
+        "Name Extension",
+        "NAME EXTENSION",
+      ])),
+    };
+  }
+
+  function middleInitial(value) {
+    return text(value)
+      .split(/\s+/)
+      .filter(Boolean)
+      .map(part => part.replace(/\./g, "").charAt(0))
+      .filter(Boolean)
+      .join(" ")
+      .toUpperCase();
+  }
+
+  function canonicalFullName(person, includeRank = true) {
+    const stored = includeRank
+      ? field(person, [
+          "canonicalNameWithRank",
+          "CANONICAL NAME WITH RANK",
+        ])
+      : field(person, [
+          "canonicalName",
+          "CANONICAL NAME",
+        ]);
+
+    if (stored) return upper(stored);
+
+    const parts = normalize(person);
+
+    return [
+      includeRank ? parts.rank : "",
+      parts.firstName,
+      parts.middleName,
+      parts.lastName,
+      parts.suffix,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function legacyFullName(person) {
+    return upper(field(person, [
+      "displayName",
+      "Display Name",
+      "fullName",
+      "Full Name",
+      "FULL NAME",
+    ]));
+  }
+
+  function formatStructured(person, options = {}) {
+    const parts = normalize(person);
+    const includeRank = options.includeRank !== false;
+    const order = options.order === "LAST_FIRST" ? "LAST_FIRST" : "FIRST_LAST";
+    const middle = options.middleInitial === true
+      ? middleInitial(parts.middleName)
+      : parts.middleName;
+
+    let name;
+
+    if (order === "LAST_FIRST") {
+      const left = [parts.lastName, parts.suffix].filter(Boolean).join(" ");
+      const right = [parts.firstName, middle].filter(Boolean).join(" ");
+      name = left && right ? `${left}, ${right}` : left || right;
+    } else {
+      name = [
+        parts.firstName,
+        middle,
+        parts.lastName,
+        parts.suffix,
+      ].filter(Boolean).join(" ");
+    }
+
+    return [includeRank ? parts.rank : "", name]
+      .filter(Boolean)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function format(person, options = {}) {
+    const storedCanonical = canonicalFullName(person, options.includeRank !== false);
+    if (storedCanonical) return storedCanonical;
+
+    const structured = formatStructured(person, options);
+    if (structured) return structured;
+
+    const fallback = legacyFullName(person);
+    if (options.includeRank === false) {
+      const rank = normalize(person).rank;
+      return rank && fallback.startsWith(`${rank} `)
+        ? fallback.slice(rank.length + 1)
+        : fallback;
+    }
+
+    return fallback;
+  }
+
+  const engine = {
+    version: "2.1.0",
+    normalize,
+    format,
+    formatStructured,
+    canonicalFullName,
+    formatWithoutRank(person, options = {}) {
+      return format(person, { ...options, includeRank: false });
+    },
+    formatForReport(person, options = {}) {
+      return format(person, { ...options, includeRank: true });
+    },
+    status() {
+      const report = {
+        version: this.version,
+        canonicalOrder: "G + I + J + H + K",
+        canonicalFields: "RANK + FIRST + MIDDLE + LAST + SUFFIX",
+        storedCanonicalPreferred: true,
+        legacyFullNameFallback: true,
+      };
+      console.table(report);
+      return report;
+    },
+  };
+
+  if (platform.engines.has("nameHandler")) {
+    platform.engines.replace("nameHandler", engine);
+  } else {
+    platform.engines.register("nameHandler", engine);
+  }
+
+  window.$PF = window.$PF || {};
+  window.$PF.name = engine;
+
+  console.info(
+    "NameHandlerEngine v2.1.0 active: stored canonical fields preferred."
+  );
+})();
+</script>

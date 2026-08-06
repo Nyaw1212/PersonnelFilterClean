@@ -1,0 +1,120 @@
+//----------------------------------
+// Personnel Apps Script API
+//----------------------------------
+
+const PersonnelAPI = {
+
+  //----------------------------------
+  // Load Personnel
+  //----------------------------------
+
+  loadPersonnel() {
+    return new Promise((resolve, reject) => {
+      google.script.run
+        .withSuccessHandler(response => {
+          try {
+            resolve(useStoredCanonicalPersonnel_(response));
+          } catch (error) {
+            reject(normalizeServerError_(error));
+          }
+        })
+        .withFailureHandler(error => {
+          reject(normalizeServerError_(error));
+        })
+        .getPersonnelTableV2Data();
+    });
+  },
+
+  //----------------------------------
+  // Apply Visible Rows
+  //----------------------------------
+
+  applyVisibleRows(payload) {
+    return new Promise((resolve, reject) => {
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(error => {
+          reject(normalizeServerError_(error));
+        })
+        .applyPersonnelVisibleRows(payload);
+    });
+  },
+
+  //----------------------------------
+  // Clear Personnel Cache
+  //----------------------------------
+
+  clearCache() {
+    return Promise.resolve({
+      success: true,
+      skipped: true,
+      message: "The main personnel loader now reads directly from Google Sheets.",
+    });
+  },
+};
+
+//----------------------------------
+// Use stored canonical fields directly
+//----------------------------------
+// LIST column R is already authoritative. Do not run NameHandlerEngine again
+// during normal personnel loading.
+
+function useStoredCanonicalPersonnel_(response) {
+  const source = response && typeof response === "object" ? response : {};
+  const records = Array.isArray(source.records) ? source.records : [];
+
+  const canonicalRecords = records.map(record => {
+    const rawFullName = String(record?.["Raw Full Name"] || "").trim();
+    const canonicalName = String(
+      record?.["CANONICAL NAME"] || record?.canonicalName || ""
+    ).trim();
+    const canonicalNameWithRank = String(
+      record?.["CANONICAL NAME WITH RANK"] ||
+      record?.canonicalNameWithRank ||
+      record?.["Full Name"] ||
+      ""
+    ).trim();
+    const personnelSearchKey = String(
+      record?.["PERSONNEL SEARCH KEY"] ||
+      record?.personnelSearchKey ||
+      canonicalNameWithRank.replace(/[^A-Za-z0-9]/g, "")
+    ).trim().toUpperCase();
+
+    return {
+      ...record,
+      "Raw Full Name": rawFullName || String(record?.["Full Name"] || "").trim(),
+      "Full Name": canonicalNameWithRank,
+      displayName: canonicalNameWithRank,
+      canonicalName,
+      canonicalNameWithRank,
+      personnelSearchKey,
+      searchKey: personnelSearchKey,
+      personnelIdentityKey: personnelSearchKey,
+    };
+  });
+
+  return {
+    ...source,
+    records: canonicalRecords,
+    nameNormalization: {
+      engine: "bypassed",
+      source: "stored-canonical-columns",
+      normalizedCount: canonicalRecords.length,
+      canonicalColumnsAuthoritative: true,
+    },
+  };
+}
+
+//----------------------------------
+// Normalize Server Error
+//----------------------------------
+
+function normalizeServerError_(error) {
+  if (error instanceof Error) return error;
+
+  return new Error(
+    error?.message ||
+    String(error) ||
+    "Unknown Apps Script error."
+  );
+}
