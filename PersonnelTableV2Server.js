@@ -2,7 +2,8 @@
 // Personnel Table V2 Server
 //----------------------------------
 // Always reads the current LIST sheet directly.
-// Column R / CANONICAL NAME WITH RANK is the authoritative table name.
+// FULL NAME is the app's authoritative display name. Canonical columns remain
+// available for report-generator compatibility only.
 
 function getPersonnelTableV2Data() {
   const sheet = getPersonnelWebSheet_();
@@ -85,10 +86,10 @@ function getPersonnelTableV2Data() {
       source["SUFFIX"],
     ].filter(Boolean).join(" ");
 
-    // Prefer the stored canonical value from column R. Only fall back when
-    // column R is blank so legacy rows remain visible.
-    const tableName = source["CANONICAL NAME WITH RANK"] ||
-      source["Raw Full Name"] ||
+    // Show the editable FULL NAME value first. Canonical fields are only a
+    // fallback for legacy rows where FULL NAME is blank.
+    const tableName = source["Raw Full Name"] ||
+      source["CANONICAL NAME WITH RANK"] ||
       structuredName;
 
     const record = {
@@ -131,7 +132,7 @@ function getPersonnelTableV2Data() {
     ],
     records,
     cached: false,
-    source: "direct-sheet-read-column-r",
+    source: "direct-sheet-read-full-name",
     loadedAt: new Date().toISOString(),
     sheetName: sheet.getName(),
     lastRow,
