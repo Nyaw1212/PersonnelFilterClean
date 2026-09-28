@@ -13,7 +13,7 @@ const PersonnelAPI = {
       google.script.run
         .withSuccessHandler(response => {
           try {
-            resolve(useStoredCanonicalPersonnel_(response));
+            resolve(useSheetFullNamePersonnel_(response));
           } catch (error) {
             reject(normalizeServerError_(error));
           }
@@ -54,37 +54,37 @@ const PersonnelAPI = {
 };
 
 //----------------------------------
-// Use stored canonical fields directly
+// Keep the editable FULL NAME as the app display value
 //----------------------------------
-// LIST column R is already authoritative. Do not run NameHandlerEngine again
-// during normal personnel loading.
+// Canonical columns remain in each record for generator compatibility, but
+// they do not override changes made to FULL NAME in the LIST sheet.
 
-function useStoredCanonicalPersonnel_(response) {
+function useSheetFullNamePersonnel_(response) {
   const source = response && typeof response === "object" ? response : {};
   const records = Array.isArray(source.records) ? source.records : [];
 
-  const canonicalRecords = records.map(record => {
-    const rawFullName = String(record?.["Raw Full Name"] || "").trim();
+  const sheetRecords = records.map(record => {
+    const rawFullName = String(
+      record?.["Raw Full Name"] || record?.["Full Name"] || ""
+    ).trim();
     const canonicalName = String(
       record?.["CANONICAL NAME"] || record?.canonicalName || ""
     ).trim();
     const canonicalNameWithRank = String(
       record?.["CANONICAL NAME WITH RANK"] ||
       record?.canonicalNameWithRank ||
-      record?.["Full Name"] ||
       ""
     ).trim();
-    const personnelSearchKey = String(
-      record?.["PERSONNEL SEARCH KEY"] ||
-      record?.personnelSearchKey ||
-      canonicalNameWithRank.replace(/[^A-Za-z0-9]/g, "")
-    ).trim().toUpperCase();
+    const displayName = rawFullName || canonicalNameWithRank;
+    const personnelSearchKey = displayName
+      .replace(/[^A-Za-z0-9]/g, "")
+      .toUpperCase();
 
     return {
       ...record,
-      "Raw Full Name": rawFullName || String(record?.["Full Name"] || "").trim(),
-      "Full Name": canonicalNameWithRank,
-      displayName: canonicalNameWithRank,
+      "Raw Full Name": rawFullName,
+      "Full Name": displayName,
+      displayName,
       canonicalName,
       canonicalNameWithRank,
       personnelSearchKey,
@@ -95,12 +95,12 @@ function useStoredCanonicalPersonnel_(response) {
 
   return {
     ...source,
-    records: canonicalRecords,
+    records: sheetRecords,
     nameNormalization: {
       engine: "bypassed",
-      source: "stored-canonical-columns",
-      normalizedCount: canonicalRecords.length,
-      canonicalColumnsAuthoritative: true,
+      source: "editable-full-name",
+      normalizedCount: sheetRecords.length,
+      canonicalColumnsAuthoritative: false,
     },
   };
 }
